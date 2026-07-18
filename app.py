@@ -25,15 +25,33 @@ def carregar_ministros():
         try:
             with open(ARQUIVO_MINISTROS, "r", encoding="utf-8") as f:
                 nomes = [linha.strip() for linha in f.readlines() if linha.strip()]
-                nomes.sort(key=str.lower)
-                nomes = nomes[:80]
-                while len(nomes) < 80:
-                    nomes.append(f"Ministro {len(nomes) + 1}")
-                return nomes
+            nomes.sort(key=str.lower)
+            # Garante que sempre teremos o tamanho total dinâmico baseado nos preenchidos + vazios
+            while len(nomes) < 82:
+                nomes.append("")
+            return nomes
         except Exception as e:
             print("Erro ao carregar ministros:", e)
-            
-    lista_padrao = [f"Ministro {i:02d}" for i in range(1, 81)]
+    
+    # Lista padrão inicial com os seus ministros enviados
+    lista_padrao = [
+        "Adalberto", "Amilton", "André", "Aparecida Moriconi", "Camila", 
+        "Carina", "Carlos", "Cida Bugue", "Cidinha Dias", "Claudia", 
+        "Claudio", "Célia", "César", "Denise", "Dense", "Dirlei", 
+        "Eder", "Eduardo", "Elena", "Elizabete", "Evandro", "Fabiana", 
+        "Fernando", "Fátima", "Goreti", "Hugo", "Jovelina", "Judith", 
+        "Junia", "Jéssica", "Kelly", "Larissa de Paula", "Leandra", 
+        "Leandro", "Letícia", "Lucia", "Lucimara", "Lucélia", "Luiz", 
+        "Luiz M", "Maria Isabel", "Maria José", "Marlene", "Matheus", 
+        "Meire", "Márcia", "Necy", "Nezica", "Nina", "Ogair", 
+        "Rafaela", "Raquel", "Reginaldo", "Roberto", "Roseli", "Rubão", 
+        "Sandra", "Sandra Aparecida", "Silvia", "Silvio", "Sueli", 
+        "Sônia", "Tuninha", "Ulisses", "Vanessa", "Vanir", "Vilcélia"
+    ]
+    # Adiciona as 15 vagas em branco solicitadas
+    for _ in range(15):
+        lista_padrao.append("")
+        
     return lista_padrao
 
 # Salvar lista no arquivo txt
@@ -41,7 +59,8 @@ def salvar_ministros_no_disco(lista_nomes):
     try:
         with open(ARQUIVO_MINISTROS, "w", encoding="utf-8") as f:
             for nome in lista_nomes:
-                f.write(nome + "\n")
+                if nome.strip():
+                    f.write(nome + "\n")
     except Exception as e:
         print(f"Erro ao salvar arquivo de ministros: {e}")
 
@@ -99,6 +118,7 @@ HTML_INTERFACE = """
         }
         .header h1 { margin: 0; font-size: 1.5rem; }
         .header p { margin: 5px 0 0 0; font-size: 0.9rem; color: #cbd5e0; }
+        
         .card {
             background-color: var(--card-bg);
             border-radius: 12px;
@@ -181,6 +201,7 @@ HTML_INTERFACE = """
         .btn-verify:hover { background-color: #dd6b20; }
         .btn-pdf { background-color: var(--success); }
         .btn-pdf:hover { background-color: #2f855a; }
+        
         .dia-item {
             border-left: 4px solid var(--primary);
             background: #edf2f7;
@@ -190,9 +211,7 @@ HTML_INTERFACE = """
         }
         .dia-item h4 { margin: 0 0 5px 0; color: var(--primary); }
         .dia-item p { margin: 2px 0; font-size: 0.85rem; }
-        .ministros-select {
-            height: 120px;
-        }
+        .ministros-select { height: 150px; }
         .grid-2 {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -208,39 +227,36 @@ HTML_INTERFACE = """
             background-color: #edf2f7;
             border-radius: 8px;
         }
-        .footer strong {
-            color: var(--primary);
-        }
+        .footer strong { color: var(--primary); }
     </style>
 </head>
 <body>
-
     <div class="content">
         <div class="header">
             <h1>† ESCALA DE MINISTROS †</h1>
             <p>Paróquia Nossa Senhora do Divino Livramento — Gestão Pastoral</p>
         </div>
 
-        <!-- Seção de Alertas e Inconsistências Globais -->
+        <!-- Seção de Alertas -->
         {% if dados.verificado %}
             {% if dados.avisos %}
-            <div class="alert">
-                <h4 style="margin: 0 0 10px 0;">⚠️ Conflitos de Ministros no Mesmo Fim de Semana / Semana:</h4>
-                <p style="font-size: 0.8rem; margin: 0 0 10px 0; color: #742a2a;">Aviso: O mesmo ministro não pode atuar em celebrações diferentes no mesmo período semanal (incluindo extras).</p>
-                <ul style="margin: 0; padding-left: 20px; line-height: 1.5;">
-                    {% for aviso in dados.avisos %}
-                    <li>{{ aviso | safe }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
+                <div class="alert">
+                    <h4 style="margin: 0 0 10px 0;">⚠️ Conflitos de Ministros no Mesmo Fim de Semana / Semana:</h4>
+                    <p style="font-size: 0.8rem; margin: 0 0 10px 0; color: #742a2a;">Aviso: O mesmo ministro não pode atuar em celebrações diferentes no mesmo período semanal.</p>
+                    <ul style="margin: 0; padding-left: 20px; line-height: 1.5;">
+                        {% for aviso in dados.avisos %}
+                            <li>{{ aviso | safe }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
             {% else %}
-            <div class="success-alert">
-                <h4 style="margin: 0;">✅ Escala 100% Consistente! Nenhum ministro está repetido no mesmo período semanal.</h4>
-            </div>
+                <div class="success-alert">
+                    <h4 style="margin: 0;">✅ Escala 100% Consistente! Nenhum ministro está repetido no mesmo período semanal.</h4>
+                </div>
             {% endif %}
         {% endif %}
 
-        <!-- 1. Configurar Período Base e Igrejas Ativas -->
+        <!-- 1. Configurar Período Base -->
         <div class="card">
             <h3>1. Configurar Mês de Referência</h3>
             <p style="font-size: 0.8rem; color: #718096; margin-top: -10px; margin-bottom: 15px;">Nota: Quartas-feiras e Sábados serão gerados apenas para a <b>Matriz</b>. Domingos serão gerados para todas as igrejas selecionadas.</p>
@@ -255,7 +271,6 @@ HTML_INTERFACE = """
                         <input type="number" name="mes" value="{{ dados.mes }}" min="1" max="12">
                     </div>
                 </div>
-                
                 <div class="form-group">
                     <label>Selecione as Igrejas Ativas para os Domingos:</label>
                     <div class="checkbox-group">
@@ -263,19 +278,18 @@ HTML_INTERFACE = """
                             <input type="checkbox" name="igrejas" value="Matriz" {% if "Matriz" in dados.igrejas_selecionadas %}checked{% endif %}> Matriz
                         </div>
                         <div class="checkbox-item">
-                            <input type="checkbox" name="igrejas" value="Santos Reis" {% if "Santos Reis" in dados.igrejas_selecionadas %}checked{% endif %}> Santos Reis
+                            <input type="checkbox" name="Santos Reis" value="Santos Reis" {% if "Santos Reis" in dados.igrejas_selecionadas %}checked{% endif %}> Santos Reis
                         </div>
                         <div class="checkbox-item">
                             <input type="checkbox" name="igrejas" value="Capela Nossa Senhora Aparecida" {% if "Capela Nossa Senhora Aparecida" in dados.igrejas_selecionadas %}checked{% endif %}> Capela Nossa Senhora Aparecida
                         </div>
                     </div>
                 </div>
-                
                 <button type="submit">Gerar Escala de Datas</button>
             </form>
         </div>
 
-        <!-- 2. Adicionar Missa/Novena Extra -->
+        <!-- 2. Adicionar Missa Extra -->
         <div class="card" style="border: 1px solid #e2e8f0;">
             <h3>➕ Adicionar Missa / Novena / Celebração Extra</h3>
             <form action="/adicionar_extra" method="POST">
@@ -290,7 +304,7 @@ HTML_INTERFACE = """
                     </div>
                 </div>
                 <div class="form-group">
-                    <label>Local / Capela / Igreja (Digitação Livre):</label>
+                    <label>Local / Capela / Igreja:</label>
                     <input type="text" name="igreja_extra" placeholder="Ex: Capela Rural Santo Expedito" required>
                 </div>
                 <div class="form-group">
@@ -313,38 +327,37 @@ HTML_INTERFACE = """
         {% if dados.escala_dados %}
         <div class="card">
             <h3>2. Escalar Ministros por Celebração</h3>
-            
             <a href="/verificar_inconsistencias" style="text-decoration: none;"><button class="btn-verify" type="button">🔍 Verificar Inconsistências (Duplicidades)</button></a>
             
             {% for dia in dados.escala_dados %}
-            <div class="dia-item">
-                <h4>{{ dia.data }} ({{ dia.dia_semana }})</h4>
-                <p><strong>Local:</strong> {{ dia.igreja }} às {{ dia.horario }}</p>
-                <p><strong>Ministros Escalados:</strong> 
-                    {% if dia.ministros %}
-                        <span style="color: var(--success); font-weight: bold;">{{ dia.ministros | join(', ') }}</span>
-                    {% else: %}
-                        <span style="color: var(--danger); font-weight: bold;">Nenhum ministro escalado</span>
-                    {% endif %}
-                </p>
-                
-                <form action="/salvar_dia/{{ loop.index0 }}" method="POST" style="margin-top: 10px;">
-                    <label style="font-size: 0.8rem;">Selecione os Ministros (em ordem alfabética):</label>
-                    <select name="ministros_selecionados" class="ministros-select" multiple>
-                        {% for ministro in dados.ministros %}
-                        <option value="{{ ministro }}" {% if ministro in dia.ministros %}selected{% endif %}>{{ ministro }}</option>
-                        {% endfor %}
-                    </select>
-                    <button type="submit" style="padding: 6px; font-size: 0.85rem; margin-top: 5px; background-color: var(--primary);">Atualizar Escala deste Dia</button>
-                </form>
-            </div>
+                <div class="dia-item">
+                    <h4>{{ dia.data }} ({{ dia.dia_semana }})</h4>
+                    <p><strong>Local:</strong> {{ dia.igreja }} às {{ dia.horario }}</p>
+                    <p><strong>Ministros Escalados:</strong> 
+                        {% if dia.ministros %}
+                            <span style="color: var(--success); font-weight: bold;">{{ dia.ministros | join(', ') }}</span>
+                        {% else: %}
+                            <span style="color: var(--danger); font-weight: bold;">Nenhum ministro escalado</span>
+                        {% endif %}
+                    </p>
+                    <form action="/salvar_dia/{{ loop.index0 }}" method="POST" style="margin-top: 10px;">
+                        <label style="font-size: 0.8rem;">Selecione os Ministros:</label>
+                        <select name="ministros_selecionados" class="ministros-select" multiple>
+                            {% for ministro in dados.ministros %}
+                                {% if ministro.strip() %}
+                                    <option value="{{ ministro }}" {% if ministro in dia.ministros %}selected{% endif %}>{{ ministro }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                        <button type="submit" style="padding: 6px; font-size: 0.85rem; margin-top: 5px; background-color: var(--primary);">Atualizar Escala deste Dia</button>
+                    </form>
+                </div>
             {% endfor %}
         </div>
 
-        <!-- 4. Observações da Escala -->
+        <!-- 4. Observações -->
         <div class="card">
             <h3>📝 Observações para o PDF</h3>
-            <p style="font-size: 0.8rem; color: #718096; margin-top: -10px; margin-bottom: 10px;">Este texto aparecerá dentro de um quadro explicativo na parte inferior da folha impressa.</p>
             <form action="/salvar_observacoes" method="POST">
                 <div class="form-group">
                     <textarea name="observacoes">{{ dados.observacoes }}</textarea>
@@ -356,22 +369,21 @@ HTML_INTERFACE = """
         <!-- 5. Gerar PDF -->
         <div class="card" style="background-color: #f0fff4; border: 1px solid #c6f6d5; text-align: center;">
             <h3>3. Concluir e Imprimir</h3>
-            <p>Gere o arquivo PDF final organizado com todas as igrejas, celebrações extras e o quadro de observações.</p>
             <a href="/gerar_pdf" style="text-decoration: none;"><button class="btn-pdf" type="button">📥 Baixar PDF da Escala</button></a>
         </div>
         {% endif %}
 
         <!-- 6. Cadastro de Ministros -->
         <div class="card">
-            <h3>📋 Cadastro de Ministros (Salva e Ordena Automaticamente)</h3>
-            <p style="font-size: 0.8rem; color: #718096; margin-top: -10px; margin-bottom: 15px;">Ao clicar em Salvar, todos os nomes serão gravados e reordenados alfabeticamente.</p>
+            <h3>📋 Cadastro Geral de Ministros</h3>
+            <p style="font-size: 0.8rem; color: #718096; margin-top: -10px; margin-bottom: 15px;">Altere os nomes ou preencha os campos em branco abaixo para adicionar novos ministros.</p>
             <form action="/salvar_ministros" method="POST">
-                <div style="max-height: 250px; overflow-y: auto; border: 1px solid #cbd5e0; padding: 10px; border-radius: 6px; background-color: #faf5ff;">
-                    {% for i in range(80) %}
-                    <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
-                        <span style="font-size: 0.85rem; width: 40px; font-weight: bold; color: var(--primary);">#{{ i+1 }}</span>
-                        <input type="text" name="min_{{ i }}" value="{{ dados.ministros[i] }}" style="padding: 5px;">
-                    </div>
+                <div style="max-height: 300px; overflow-y: auto; border: 1px solid #cbd5e0; padding: 10px; border-radius: 6px; background-color: #faf5ff;">
+                    {% for i in range(dados.ministros|length) %}
+                        <div class="form-group" style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                            <span style="font-size: 0.85rem; width: 40px; font-weight: bold; color: var(--primary);">#{{ i+1 }}</span>
+                            <input type="text" name="min_{{ i }}" value="{{ dados.ministros[i] }}" style="padding: 5px;" placeholder="(Vaga disponível)">
+                        </div>
                     {% endfor %}
                 </div>
                 <button type="submit" style="margin-top: 10px; background-color: #4a5568;">💾 Salvar e Ordenar Alfabeticamente</button>
@@ -379,24 +391,17 @@ HTML_INTERFACE = """
         </div>
     </div>
 
-    <!-- Rodapé solicitado -->
     <div class="footer">
         Desenvolvido para a <strong>Paróquia Nossa Senhora do Divino Livramento</strong><br>
         Created by <strong>Eng. Evandro Santos</strong>
     </div>
-
 </body>
 </html>
 """
 
 def analisar_duplicidades():
-    """
-    Verifica se o mesmo ministro está escalado em mais de uma celebração
-    na mesma semana litúrgica (considerando Segunda a Domingo do calendário).
-    """
     dados_sistema["avisos"] = []
     lista_escalas = dados_sistema["escala_dados"]
-    
     por_semana = {}
     
     for item in lista_escalas:
@@ -404,28 +409,23 @@ def analisar_duplicidades():
             data_obj = datetime.strptime(item["data"], "%d/%m/%Y").date()
             ano_iso, num_semana, _ = data_obj.isocalendar()
             chave_semana = f"{ano_iso}-W{num_semana:02d}"
-            
             if chave_semana not in por_semana:
                 por_semana[chave_semana] = []
             por_semana[chave_semana].append(item)
         except Exception as e:
             print(f"Erro ao processar data {item['data']}: {e}")
-
+            
     for chave, celebracoes in por_semana.items():
         for i, cel_a in enumerate(celebracoes):
             for j, cel_b in enumerate(celebracoes):
                 if i >= j:
                     continue
-                
                 comuns = set(cel_a["ministros"]).intersection(set(cel_b["ministros"]))
-                
                 for ministro in comuns:
                     if ministro.strip():
-                        msg = (
-                            f"O ministro <b>{ministro}</b> está escalado duas vezes na mesma semana:<br/>"
-                            f"• {cel_a['data']} ({cel_a['dia_semana']}) na <b>{cel_a['igreja']}</b><br/>"
-                            f"• {cel_b['data']} ({cel_b['dia_semana']}) na <b>{cel_b['igreja']}</b>"
-                        )
+                        msg = (f"O ministro <b>{ministro}</b> está escalado duas vezes na mesma semana:<br/>"
+                               f"• {cel_a['data']} ({cel_a['dia_semana']}) na <b>{cel_a['igreja']}</b><br/>"
+                               f"• {cel_b['data']} ({cel_b['dia_semana']}) na <b>{cel_b['igreja']}</b>")
                         if msg not in dados_sistema["avisos"]:
                             dados_sistema["avisos"].append(msg)
 
@@ -451,42 +451,23 @@ def gerar_datas():
         dados_sistema["igrejas_selecionadas"] = ["Matriz"]
         
     c = calendar.Calendar(firstweekday=calendar.SUNDAY)
-    
     for dia, dia_semana in c.itermonthdays2(dados_sistema["ano"], dados_sistema["mes"]):
-        if dia != 0 and dia_semana in [2, 5, 6]:  
+        if dia != 0 and dia_semana in [2, 5, 6]:
             dia_str = f"{dia:02d}/{dados_sistema['mes']:02d}/{dados_sistema['ano']}"
-            
-            # Quarta-feira (Apenas Matriz)
             if dia_semana == 2:
                 dados_sistema["escala_dados"].append({
-                    "data": dia_str,
-                    "dia_semana": "Quarta-feira",
-                    "igreja": "Matriz",
-                    "horario": "19:00",
-                    "ministros": []
+                    "data": dia_str, "dia_semana": "Quarta-feira", "igreja": "Matriz", "horario": "19:00", "ministros": []
                 })
-                
-            # Sábado (Apenas Matriz)
             elif dia_semana == 5:
                 dados_sistema["escala_dados"].append({
-                    "data": dia_str,
-                    "dia_semana": "Sábado",
-                    "igreja": "Matriz",
-                    "horario": "19:30",
-                    "ministros": []
+                    "data": dia_str, "dia_semana": "Sábado", "igreja": "Matriz", "horario": "19:30", "ministros": []
                 })
-                
-            # Domingo (Todas as igrejas selecionadas)
             elif dia_semana == 6:
                 for igreja in dados_sistema["igrejas_selecionadas"]:
                     dados_sistema["escala_dados"].append({
-                        "data": dia_str,
-                        "dia_semana": "Domingo",
-                        "igreja": igreja,
-                        "horario": "07:00" if "Matriz" in igreja else "08:30",
-                        "ministros": []
+                        "data": dia_str, "dia_semana": "Domingo", "igreja": igreja, "horario": "07:00" if "Matriz" in igreja else "08:30", "ministros": []
                     })
-            
+                    
     dados_sistema["escala_dados"].sort(key=lambda x: datetime.strptime(x["data"], "%d/%m/%Y"))
     return redirect(url_for('index'))
 
@@ -500,23 +481,17 @@ def adicionar_extra():
     
     if data_ext and hora_ext and igreja_ext:
         dados_sistema["escala_dados"].append({
-            "data": data_ext,
-            "dia_semana": dia_sem_ext,
-            "igreja": igreja_ext,
-            "horario": hora_ext,
-            "ministros": []
+            "data": data_ext, "dia_semana": dia_sem_ext, "igreja": igreja_ext, "horario": hora_ext, "ministros": []
         })
         try:
             dados_sistema["escala_dados"].sort(key=lambda x: datetime.strptime(x["data"], "%d/%m/%Y"))
         except Exception:
             pass
-            
     return redirect(url_for('index'))
 
 @app.route('/salvar_dia/<int:dia_id>', methods=['POST'])
 def salvar_dia(dia_id):
-    ministros_selecionados = request.form.getlist("ministros_selecionados")
-    dados_sistema["escala_dados"][dia_id]["ministros"] = ministros_selecionados
+    dados_sistema["escala_dados"][dia_id]["ministros"] = request.form.getlist("ministros_selecionados")
     dados_sistema["verificado"] = False
     return redirect(url_for('index'))
 
@@ -528,14 +503,19 @@ def salvar_observacoes():
 @app.route('/salvar_ministros', methods=['POST'])
 def salvar_ministros():
     novos_nomes = []
-    for i in range(80):
-        nome_editado = request.form.get(f"min_{i}").strip()
-        if nome_editado:
-            novos_nomes.append(nome_editado)
-        else:
-            novos_nomes.append(f"Ministro {i+1}")
-            
+    # Captura tudo o que foi enviado via formulário
+    for key in request.form:
+        if key.startswith("min_"):
+            nome = request.form.get(key).strip()
+            if nome:
+                novos_nomes.append(nome)
+                
     novos_nomes.sort(key=str.lower)
+    
+    # Adiciona sempre as 15 posições vazias coringas no final
+    for _ in range(15):
+        novos_nomes.append("")
+        
     dados_sistema["ministros"] = novos_nomes
     salvar_ministros_no_disco(novos_nomes)
     return redirect(url_for('index'))
@@ -543,22 +523,12 @@ def salvar_ministros():
 @app.route('/gerar_pdf')
 def gerar_pdf():
     filepath = os.path.join(PASTA_HOME, "escala_ministros.pdf")
-    
     doc = SimpleDocTemplate(filepath, pagesize=letter, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
     story = []
     styles = getSampleStyleSheet()
     
-    titulo_style = ParagraphStyle(
-        'TituloLiturgico', parent=styles['Heading1'],
-        fontSize=14, leading=16, alignment=1,
-        textColor=colors.HexColor('#1a365d'), spaceAfter=5
-    )
-    
-    sub_style = ParagraphStyle(
-        'SubLiturgico', parent=styles['Normal'],
-        fontSize=10, leading=12, alignment=1,
-        textColor=colors.HexColor('#4a5568'), spaceAfter=15
-    )
+    titulo_style = ParagraphStyle('TituloLiturgico', parent=styles['Heading1'], fontSize=14, leading=16, alignment=1, textColor=colors.HexColor('#1a365d'), spaceAfter=5)
+    sub_style = ParagraphStyle('SubLiturgico', parent=styles['Normal'], fontSize=10, leading=12, alignment=1, textColor=colors.HexColor('#4a5568'), spaceAfter=15)
     
     story.append(Paragraph("† ESCALA DE MINISTROS DA SAGRADA COMUNHÃO †", titulo_style))
     story.append(Paragraph(f"Referência Pastoral: {dados_sistema['mes']:02d}/{dados_sistema['ano']} — Paróquia Nsa. Sra. do Divino Livramento", sub_style))
@@ -585,20 +555,14 @@ def gerar_pdf():
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
         ('TOPPADDING', (0, 0), (-1, -1), 6),
     ]))
-    
     story.append(tabela)
     story.append(Spacer(1, 15))
     
     obs_titulo_style = ParagraphStyle('ObsTitulo', parent=styles['Normal'], fontSize=9, leading=11, fontName="Helvetica-Bold", textColor=colors.HexColor('#1a365d'))
     obs_texto_style = ParagraphStyle('ObsTexto', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#2d3748'))
-    
     obs_html = dados_sistema["observacoes"].replace("\n", "<br/>")
     
-    dados_quadro = [
-        [Paragraph("<b>OBSERVAÇÕES IMPORTANTES</b>", obs_titulo_style)],
-        [Paragraph(obs_html, obs_texto_style)]
-    ]
-    
+    dados_quadro = [[Paragraph("<b>OBSERVAÇÕES IMPORTANTES</b>", obs_titulo_style)], [Paragraph(obs_html, obs_texto_style)]]
     quadro_obs = Table(dados_quadro, colWidths=[540])
     quadro_obs.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fafc')),
@@ -608,12 +572,10 @@ def gerar_pdf():
         ('LEFTPADDING', (0, 0), (-1, -1), 12),
         ('RIGHTPADDING', (0, 0), (-1, -1), 12),
     ]))
-    
     story.append(quadro_obs)
-    doc.build(story)
     
+    doc.build(story)
     return send_file(filepath, as_attachment=True)
 
 if __name__ == "__main__":
-    webbrowser.open("http://127.0.0.1:5000")
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=10000)
