@@ -1,0 +1,459 @@
+import os
+import calendar
+from datetime import datetime
+from flask import Flask, render_template_string, request, redirect, url_for, send_file
+
+# Importações do ReportLab com fallback
+try:
+    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+except ImportError:
+    print("Aviso: 'reportlab' não está instalado. A geração de PDF estará indisponível.")
+
+app = Flask(__name__)
+
+# Diretório base seguro para salvamento de arquivos
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+ARQUIVOS = {
+    "ministros": os.path.join(DATA_DIR, "ministros.txt"),
+    "acolitos": os.path.join(DATA_DIR, "acolitos.txt"),
+    "coroinhas": os.path.join(DATA_DIR, "coroinhas.txt"),
+    "canto": os.path.join(DATA_DIR, "canto.txt"),
+    "liturgia": os.path.join(DATA_DIR, "liturgia.txt")
+}
+
+# Listas Iniciais Fornecidas
+LISTAS_INICIAIS = {
+    "coroinhas": [
+        "Alice", "Beatris", "Beatriz", "Bruna Ap.", "Bruna S.", "Giovanna", "Giovanni", 
+        "Hellen", "Iasmim", "João Miguel", "João Victor", "Julia C.", "Julia M", 
+        "M. Antonia", "M. Cecilia", "M. Clara", "M. Fernanda", "Nelson", "Paola", 
+        "Thiago", "Vitoria"
+    ],
+    "acolitos": [
+        "Alyssa", "Ana Laura", "Clara", "Gabriel", "Gabriela", "Gustavo", "Heloisa", 
+        "Lucas", "Manoel", "Manuela C.", "Manuela S.", "Marcela", "Mariana", 
+        "Matheus A.", "Matheus V.", "Murilo", "Nathalia", "Otavio", "Ricardo", "Sthefally"
+    ],
+    "liturgia": [
+        "ACÓLITOS", "ADVOGADOS", "APOSTOLADO", "CATEQUESE", "COMERCIANTES", "CONFRARIA", 
+        "CRISTO REI", "DÍZIMO", "GOJ", "JUNIOR/AMIGOS", "MESCE", "N. S. APARECIDA", 
+        "N. S. DAS GRAÇAS", "P. VOCACIONAL", "PORTAL", "PROFESSORES", "R.C", "S. AGOSTINHO", 
+        "S. BÁRBARA", "S. EXPEDITO", "S. JORGE", "S. JUDAS TADEU", "S. MIGUEL", 
+        "S. RAFAEL", "S. TEREZA", "S. VICENTE"
+    ],
+    "canto": [
+        "CARLA", "CRIS", "DENISE", "DITO", "DOUGLAS", "GERALDO", "GIVANILDO", 
+        "JOÃO", "LINDHISEY", "MARCELA", "MARCELO", "OSCAR", "PEDRO"
+    ],
+    "ministros": []
+}
+
+def carregar_lista(tipo, rotulo_padrao, extra_vagas=10):
+    caminho = ARQUIVOS[tipo]
+    nomes = []
+    
+    # 1. Carrega do arquivo se existir
+    if os.path.exists(caminho):
+        try:
+            with open(caminho, "r", encoding="utf-8") as f:
+                nomes = [linha.strip() for linha in f.readlines() if linha.strip()]
+        except Exception:
+            nomes = []
+
+    # 2. Se o arquivo estava vazio, usa os dados padrão fornecidos
+    if not nomes:
+        nomes = LISTAS_INICIAIS.get(tipo, [])
+
+    nomes.sort(key=str.lower)
+    
+    # 3. Adiciona as 10 vagas extras/substitutas configuráveis
+    total_desejado = len(nomes) + extra_vagas
+    contador_padrao = 1
+    
+    while len(nomes) < total_desejado:
+        novo_nome = f"{rotulo_padrao} {contador_padrao:02d}"
+        if novo_nome not in nomes:
+            nomes.append(novo_nome)
+        contador_padrao += 1
+        
+    return nomes
+
+def salvar_lista_no_disco(tipo, lista_nomes):
+    try:
+        with open(ARQUIVOS[tipo], "w", encoding="utf-8") as f:
+            for nome in lista_nomes:
+                f.write(nome + "\n")
+    except Exception as e:
+        print(f"Erro ao salvar arquivo {tipo}: {e}")
+
+dados_sistema = {
+    "ano": 2026,
+    "mes": 1,
+    "igrejas_selecionadas": ["Matriz"],
+    "ministros": carregar_lista("ministros", "Ministro", 20),
+    "acolitos": carregar_lista("acolitos", "Acólito", 10),
+    "coroinhas": carregar_lista("coroinhas", "Coroinha", 10),
+    "canto": carregar_lista("canto", "Integrante Canto", 10),
+    "liturgia": carregar_lista("liturgia", "Equipe Liturgia", 10),
+    "escala_dados": [],
+    "observacoes": "Nota: Os voluntários impossibilitados de comparecer deverão providenciar substituto com antecedência.",
+    "avisos": [],
+    "verificado": False
+}
+
+def analisar_duplicidades():
+    dados_sistema["avisos"] = []
+    por_semana = {}  
+    for item in dados_sistema["escala_dados"]:  
+        try:  
+            data_obj = datetime.strptime(item["data"], "%d/%m/%Y").date()  
+            ano_iso, num_semana, _ = data_obj.isocalendar()  
+            chave_semana = f"{ano_iso}-W{num_semana:02d}"  
+            if chave_semana not in por_semana: por_semana[chave_semana] = []  
+            por_semana[chave_semana].append(item)  
+        except Exception: 
+            pass
+
+    categorias = [
+        {"chave": "ministros", "singular": "Ministro(a)"},
+        {"chave": "acolitos", "singular": "Acólito"},
+        {"chave": "coroinhas", "singular": "Coroinha"},
+        {"chave": "canto", "singular": "Integrante do Canto"},
+        {"chave": "liturgia", "singular": "Equipe de Liturgia"}
+    ]
+
+    for chave_semana, celebracoes in por_semana.items():  
+        for i, cel_a in enumerate(celebracoes):  
+            for j, cel_b in enumerate(celebracoes):  
+                if i >= j: continue  
+                for cat in categorias:
+                    comuns = set(cel_a[cat["chave"]]).intersection(set(cel_b[cat["chave"]]))  
+                    for pessoa in comuns:  
+                        if pessoa.strip():  
+                            msg = f"O(A) {cat['singular']} <b>{pessoa}</b> está escalado(a) mais de uma vez na mesma semana:<br/>• {cel_a['data']} em {cel_a['igreja']}<br/>• {cel_b['data']} em {cel_b['igreja']}"  
+                            if msg not in dados_sistema["avisos"]: dados_sistema["avisos"].append(msg)
+
+HTML_INTERFACE = """
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Escala Paroquial — Nsa. Sra. do Divino Livramento</title>
+    <style>
+        :root { --primary: #1a365d; --secondary: #d69e2e; --bg: #f7fafc; --card-bg: #ffffff; --text: #2d3748; --danger: #e53e3e; --success: #38a169; --warning: #dd6b20; --info: #3182ce; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 15px; display: flex; flex-direction: column; min-height: 100vh; }
+        .content { flex: 1; }
+        .header { text-align: center; background-color: var(--primary); color: white; padding: 25px 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .header h1 { margin: 0; font-size: 1.5rem; letter-spacing: 1px; }
+        .header p { margin: 5px 0 0 0; font-size: 0.95rem; opacity: 0.9; }
+        .card { background-color: var(--card-bg); border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .alert { background-color: #fff5f5; border-left: 4px solid var(--danger); color: var(--danger); padding: 15px; border-radius: 6px; margin-bottom: 20px; font-size: 0.9rem; }  
+        .success-alert { background-color: #f0fff4; border-left: 4px solid var(--success); color: var(--success); padding: 15px; border-radius: 6px; margin-bottom: 20px; font-size: 0.9rem; }  
+        .form-group { margin-bottom: 15px; }
+        label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9rem; }
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #cbd5e0; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
+        textarea { resize: vertical; height: 100px; }
+        .checkbox-group { display: flex; flex-direction: column; gap: 8px; }
+        .checkbox-item { display: flex; align-items: center; gap: 10px; }
+        .checkbox-item input { width: auto; }
+        button { width: 100%; background-color: var(--primary); color: white; border: none; padding: 12px; border-radius: 6px; font-size: 1rem; font-weight: bold; cursor: pointer; }
+        .btn-add { background-color: var(--secondary); }
+        .btn-verify { background-color: var(--warning); margin-bottom: 15px; }  
+        .btn-pdf { background-color: var(--success); }
+        .btn-sub-save { background-color: #4a5568; padding: 6px; font-size: 0.8rem; margin-top: 4px; }
+        .dia-item { border-left: 4px solid var(--primary); background: #edf2f7; padding: 12px; border-radius: 0 8px 8px 0; margin-bottom: 15px; }
+        .dia-item h4 { margin: 0 0 5px 0; color: var(--primary); }
+        .dia-item p { margin: 4px 0; font-size: 0.85rem; }
+        .select-escala { height: 110px; font-size: 0.85rem; }
+        .grid-sub-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-top: 10px; }
+        .sub-form-block { background: #fff; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0; }
+        .footer { text-align: center; padding: 20px 10px; margin-top: 30px; border-top: 1px solid #e2e8f0; font-size: 0.85rem; color: #718096; background-color: #edf2f7; border-radius: 8px; line-height: 1.5; }
+    </style>
+</head>
+<body>
+<div class="content">
+    <div class="header">
+        <h1>† ESCALA GERAL DE LITURGIA †</h1>
+        <p>Paróquia Nossa Senhora do Divino Livramento — Buritama/SP</p>
+    </div>
+
+    {% if dados.verificado %}  
+        {% if dados.avisos %}  
+        <div class="alert">  
+            <h4 style="margin: 0 0 10px 0;">⚠️ Conflitos Encontrados:</h4>  
+            <ul style="margin: 0; padding-left: 20px;">  
+                {% for aviso in dados.avisos %}<li>{{ aviso | safe }}</li>{% endfor %}  
+            </ul>  
+        </div>  
+        {% else %}  
+        <div class="success-alert"><h4>✅ Escala Perfeita! Nenhum voluntário repetido na semana.</h4></div>  
+        {% endif %}  
+    {% endif %}  
+
+    <div class="card">
+        <h3>1. Configurar Mês de Referência</h3>
+        <form action="/gerar_datas" method="POST">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="form-group"><label>Ano:</label><input type="number" name="ano" value="{{ dados.ano }}"></div>
+                <div class="form-group"><label>Mês (1-12):</label><input type="number" name="mes" value="{{ dados.mes }}" min="1" max="12"></div>
+            </div>
+            <div class="form-group">
+                <label>Igrejas Ativas para os Domingos:</label>
+                <div class="checkbox-group">
+                    <div class="checkbox-item"><input type="checkbox" name="igrejas" value="Matriz" {% if "Matriz" in dados.igrejas_selecionadas %}checked{% endif %}> Matriz</div>
+                    <div class="checkbox-item"><input type="checkbox" name="igrejas" value="Santos Reis e São José" {% if "Santos Reis e São José" in dados.igrejas_selecionadas %}checked{% endif %}> Santos Reis e São José</div>
+                    <div class="checkbox-item"><input type="checkbox" name="igrejas" value="Capela Nossa Senhora Aparecida" {% if "Capela Nossa Senhora Aparecida" in dados.igrejas_selecionadas %}checked{% endif %}> Capela Nsa. Aparecida</div>
+                </div>
+            </div>
+            <button type="submit" style="background-color: var(--info);">⚙️ Inicializar Escala Base</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>➕ Adicionar Celebração Extra</h3>
+        <form action="/adicionar_extra" method="POST">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="form-group"><label>Data:</label><input type="text" name="data_extra" placeholder="Ex: 12/05/2026" required></div>
+                <div class="form-group"><label>Horário:</label><input type="text" name="horario_extra" placeholder="Ex: 19:30" required></div>
+            </div>
+            <div class="form-group"><label>Local / Igreja:</label><input type="text" name="igreja_extra" required></div>
+            <div class="form-group">
+                <label>Dia da Semana:</label>
+                <select name="dia_semana_extra">
+                    <option value="Segunda-feira">Segunda-feira</option><option value="Terça-feira">Terça-feira</option>
+                    <option value="Quarta-feira">Quarta-feira</option><option value="Quinta-feira">Quinta-feira</option>
+                    <option value="Sexta-feira">Sexta-feira</option><option value="Sábado">Sábado</option><option value="Domingo">Domingo</option>
+                </select>
+            </div>
+            <button type="submit" class="btn-add">Incluir Celebração Extra</button>
+        </form>
+    </div>
+
+    {% if dados.escala_dados %}
+    <div class="card">
+        <h3>2. Escalar Equipes por Celebração</h3>
+        <a href="/verificar_inconsistencias" style="text-decoration: none;"><button class="btn-verify">🔍 Verificar Inconsistências Globais</button></a>
+        
+        {% for dia in dados.escala_dados %}
+        <div class="dia-item">
+            <h4>{{ dia.data }} ({{ dia.dia_semana }}) - {{ dia.igreja }} às {{ dia.horario }}</h4>
+            <p><strong>Ministros:</strong> {{ dia.ministros | join(', ') if dia.ministros else '-' }}</p>
+            <p><strong>Acólitos:</strong> {{ dia.acolitos | join(', ') if dia.acolitos else '-' }}</p>
+            <p><strong>Coroinhas:</strong> {{ dia.coroinhas | join(', ') if dia.coroinhas else '-' }}</p>
+            <p><strong>Canto:</strong> {{ dia.canto | join(', ') if dia.canto else '-' }}</p>
+            <p><strong>Liturgia:</strong> {{ dia.liturgia | join(', ') if dia.liturgia else '-' }}</p>
+            
+            <div class="grid-sub-form">
+                <form action="/salvar_dia_individual/{{ loop.index0 }}/ministros" method="POST" class="sub-form-block">
+                    <label>Ministros:</label>
+                    <select name="dados_selecionados" class="select-escala" multiple>
+                        {% for m in dados.ministros %}<option value="{{ m }}" {% if m in dia.ministros %}selected{% endif %}>{{ m }}</option>{% endfor %}
+                    </select>
+                    <button type="submit" class="btn-sub-save">💾 Salvar</button>
+                </form>
+
+                <form action="/salvar_dia_individual/{{ loop.index0 }}/acolitos" method="POST" class="sub-form-block">
+                    <label>Acólitos:</label>
+                    <select name="dados_selecionados" class="select-escala" multiple>
+                        {% for a in dados.acolitos %}<option value="{{ a }}" {% if a in dia.acolitos %}selected{% endif %}>{{ a }}</option>{% endfor %}
+                    </select>
+                    <button type="submit" class="btn-sub-save">💾 Salvar</button>
+                </form>
+
+                <form action="/salvar_dia_individual/{{ loop.index0 }}/coroinhas" method="POST" class="sub-form-block">
+                    <label>Coroinhas:</label>
+                    <select name="dados_selecionados" class="select-escala" multiple>
+                        {% for c in dados.coroinhas %}<option value="{{ c }}" {% if c in dia.coroinhas %}selected{% endif %}>{{ c }}</option>{% endfor %}
+                    </select>
+                    <button type="submit" class="btn-sub-save">💾 Salvar</button>
+                </form>
+
+                <form action="/salvar_dia_individual/{{ loop.index0 }}/canto" method="POST" class="sub-form-block">
+                    <label>Canto:</label>
+                    <select name="dados_selecionados" class="select-escala" multiple>
+                        {% for t in dados.canto %}<option value="{{ t }}" {% if t in dia.canto %}selected{% endif %}>{{ t }}</option>{% endfor %}
+                    </select>
+                    <button type="submit" class="btn-sub-save">💾 Salvar</button>
+                </form>
+
+                <form action="/salvar_dia_individual/{{ loop.index0 }}/liturgia" method="POST" class="sub-form-block">
+                    <label>Liturgia:</label>
+                    <select name="dados_selecionados" class="select-escala" multiple>
+                        {% for l in dados.liturgia %}<option value="{{ l }}" {% if l in dia.liturgia %}selected{% endif %}>{{ l }}</option>{% endfor %}
+                    </select>
+                    <button type="submit" class="btn-sub-save">💾 Salvar</button>
+                </form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="card">
+        <h3>📝 Observações para o PDF</h3>
+        <form action="/salvar_observacoes" method="POST">
+            <textarea name="observacoes">{{ dados.observacoes }}</textarea>
+            <button type="submit">Atualizar Observações</button>
+        </form>
+    </div>
+
+    <div class="card" style="background-color: #f0fff4; border: 1px solid #c6f6d5; text-align: center;">
+        <h3>3. Concluir Escala Paroquial</h3>
+        <a href="/gerar_pdf" style="text-decoration: none;"><button class="btn-pdf">✨ GERAR ESCALA FINAL (PDF) ✨</button></a>
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <h3>📋 Cadastros de Apoio (Edite ou adicione novos nomes linha por linha)</h3>
+        {% for cat in [('ministros', 'Ministros'), ('acolitos', 'Acólitos'), ('coroinhas', 'Coroinhas'), ('canto', 'Canto'), ('liturgia', 'Liturgia')] %}
+        <form action="/salvar_categoria/{{ cat[0] }}" method="POST" style="margin-bottom:15px;">
+            <label>{{ cat[1] }}:</label>
+            <textarea name="conteudo">{% for n in dados[cat[0]] %}{{ n }}&#10;{% endfor %}</textarea>
+            <button type="submit" style="background-color:#4a5568; padding:8px; font-size:0.85rem;">Atualizar Lista de {{ cat[1] }}</button>
+        </form>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="footer">
+    Desenvolvido para a <strong>Paróquia Nossa Senhora do Divino Livramento</strong><br>
+    Created by <strong>Eng. Evandro Santos</strong><br>
+    <strong>Suporte: 17 99762 9708</strong>
+</div>
+</body>
+</html>
+"""
+
+@app.route('/')
+def index():
+    return render_template_string(HTML_INTERFACE, dados=dados_sistema)
+
+@app.route('/verificar_inconsistencias')
+def verificar_inconsistencias():
+    analisar_duplicidades()
+    dados_sistema["verificado"] = True
+    return redirect(url_for('index'))
+
+@app.route('/gerar_datas', methods=['POST'])
+def gerar_datas():
+    dados_sistema["ano"] = int(request.form.get("ano"))
+    dados_sistema["mes"] = int(request.form.get("mes"))
+    dados_sistema["igrejas_selecionadas"] = request.form.getlist("igrejas")
+    dados_sistema["verificado"] = False
+    dados_sistema["escala_dados"] = []
+
+    if not dados_sistema["igrejas_selecionadas"]: 
+        dados_sistema["igrejas_selecionadas"] = ["Matriz"]
+        
+    c = calendar.Calendar(firstweekday=calendar.SUNDAY)
+    for dia, dia_semana in c.itermonthdays2(dados_sistema["ano"], dados_sistema["mes"]):
+        if dia != 0 and dia_semana in [2, 5, 6]:
+            dia_str = f"{dia:02d}/{dados_sistema['mes']:02d}/{dados_sistema['ano']}"
+            if dia_semana == 2:
+                dados_sistema["escala_dados"].append({"data": dia_str, "dia_semana": "Quarta-feira", "igreja": "Matriz", "horario": "19:00", "ministros": [], "acolitos": [], "coroinhas": [], "canto": [], "liturgia": []})
+            elif dia_semana == 5:
+                dados_sistema["escala_dados"].append({"data": dia_str, "dia_semana": "Sábado", "igreja": "Matriz", "horario": "19:30", "ministros": [], "acolitos": [], "coroinhas": [], "canto": [], "liturgia": []})
+            elif dia_semana == 6:
+                for igreja in dados_sistema["igrejas_selecionadas"]:
+                    dados_sistema["escala_dados"].append({"data": dia_str, "dia_semana": "Domingo", "igreja": igreja, "horario": "07:00" if "Matriz" in igreja else "08:30", "ministros": [], "acolitos": [], "coroinhas": [], "canto": [], "liturgia": []})
+            
+    dados_sistema["escala_dados"].sort(key=lambda x: datetime.strptime(x["data"], "%d/%m/%Y"))
+    return redirect(url_for('index'))
+
+@app.route('/adicionar_extra', methods=['POST'])
+def adicionar_extra():
+    dados_sistema["verificado"] = False
+    dados_sistema["escala_dados"].append({
+        "data": request.form.get("data_extra").strip(), "dia_semana": request.form.get("dia_semana_extra"),
+        "igreja": request.form.get("igreja_extra").strip(), "horario": request.form.get("horario_extra").strip(),
+        "ministros": [], "acolitos": [], "coroinhas": [], "canto": [], "liturgia": []
+    })
+    try: 
+        dados_sistema["escala_dados"].sort(key=lambda x: datetime.strptime(x["data"], "%d/%m/%Y"))
+    except Exception: 
+        pass
+    return redirect(url_for('index'))
+
+@app.route('/salvar_dia_individual/<int:dia_id>/<categoria>', methods=['POST'])
+def salvar_dia_individual(dia_id, categoria):
+    dados_sistema["verificado"] = False
+    dados_sistema["escala_dados"][dia_id][categoria] = request.form.getlist("dados_selecionados")
+    return redirect(url_for('index'))
+
+@app.route('/salvar_observacoes', methods=['POST'])
+def salvar_observacoes():
+    dados_sistema["observacoes"] = request.form.get("observacoes").strip()
+    return redirect(url_for('index'))
+
+@app.route('/salvar_categoria/<tipo>', methods=['POST'])
+def salvar_categoria(tipo):
+    novos_nomes = [l.strip() for l in request.form.get("conteudo").split('\n') if l.strip()]
+    novos_nomes.sort(key=str.lower)
+    dados_sistema[tipo] = novos_nomes
+    salvar_lista_no_disco(tipo, novos_nomes)
+    return redirect(url_for('index'))
+
+@app.route('/gerar_pdf')
+def gerar_pdf():
+    filepath = os.path.join(DATA_DIR, "escala_geral_liturgia.pdf")
+    doc = SimpleDocTemplate(filepath, pagesize=landscape(letter), leftMargin=25, rightMargin=25, topMargin=25, bottomMargin=25)
+    story = []
+    styles = getSampleStyleSheet()
+            
+    titulo_style = ParagraphStyle('TxtTit', parent=styles['Heading1'], fontSize=15, leading=17, alignment=1, textColor=colors.HexColor('#1a365d'), spaceAfter=2)
+    sub_style = ParagraphStyle('TxtSub', parent=styles['Normal'], fontSize=10, leading=12, alignment=1, textColor=colors.HexColor('#4a5568'), spaceAfter=15)
+    
+    story.append(Paragraph("PARÓQUIA NOSSA SENHORA DO DIVINO LIVRAMENTO", titulo_style))
+    story.append(Paragraph(f"<b>Escala Geral de Serviços Litúrgicos</b> — Mês de Referência: {dados_sistema['mes']:02d}/{dados_sistema['ano']}", sub_style))
+    
+    tabela_dados = [["DATA / HORÁRIO", "LOCAL / IGREJA", "MINISTROS", "ACÓLITOS", "COROINHAS", "EQUIPE DE CANTO", "LITURGIA"]]
+    cell_style = ParagraphStyle('CelStyle', parent=styles['Normal'], fontSize=8, leading=10)
+    
+    for item in dados_sistema["escala_dados"]:
+        tabela_dados.append([
+            Paragraph(f"<b>{item['data']}</b><br/>{item['dia_semana']}<br/>às {item['horario']}", cell_style),
+            Paragraph(item['igreja'], cell_style),
+            Paragraph(", ".join(item["ministros"]) if item["ministros"] else "-", cell_style),
+            Paragraph(", ".join(item["acolitos"]) if item["acolitos"] else "-", cell_style),
+            Paragraph(", ".join(item["coroinhas"]) if item["coroinhas"] else "-", cell_style),
+            Paragraph(", ".join(item["canto"]) if item["canto"] else "-", cell_style),
+            Paragraph(", ".join(item["liturgia"]) if item["liturgia"] else "-", cell_style)
+        ])
+    
+    tabela = Table(tabela_dados, colWidths=[92, 100, 115, 110, 110, 105, 110])
+    tabela.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1a365d')),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e0')),
+        ('PADDING', (0, 0), (-1, -1), 6),
+    ]))
+    
+    story.append(tabela)
+    story.append(Spacer(1, 15))
+    
+    obs_tit = ParagraphStyle('ObsT', parent=styles['Normal'], fontSize=9, fontName="Helvetica-Bold", textColor=colors.HexColor('#1a365d'))
+    obs_txt = ParagraphStyle('ObsTxt', parent=styles['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#2d3748'))
+    
+    dados_quadro = [[Paragraph("<b>OBSERVAÇÕES E DIRETRIZES GERAIS</b>", obs_tit)], [Paragraph(dados_sistema["observacoes"].replace("\n", "<br/>"), obs_txt)]]
+    quadro_obs = Table(dados_quadro, colWidths=[742])
+    quadro_obs.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fafc')),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#d69e2e')),
+        ('PADDING', (0, 0), (-1, -1), 8),
+    ]))
+    
+    story.append(quadro_obs)
+    doc.build(story)
+    return send_file(filepath, as_attachment=True)
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
